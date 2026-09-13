@@ -1,0 +1,13 @@
+# 构建产物（exe 通过 GitHub Releases 发布，不纳入代码仓库）
+图片文字提取工具.exe
+dist/
+build/
+*.spec
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 测试/临时文件
+_test_*
+_selftest*

@@ -1,0 +1,6 @@
+# 运行本项目所需的依赖
+rapidocr_onnxruntime>=1.2.3
+customtkinter>=5.2.0
+pillow>=10.0.0
+# 打包 exe 所需（仅重新打包时需要）
+pyinstaller>=6.0
