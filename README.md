@@ -1,4 +1,4 @@
-# 图片文字提取工具
+# PixLens · 图片文字提取工具
 
 一款完全免费、**本地离线**的图片文字提取（OCR）软件。
 无需联网、无需注册、不上传图片，识别结果只保存在你自己的电脑上。
@@ -7,7 +7,7 @@
 
 无需安装 Python，直接下载打包好的 exe 双击运行：
 
-**[👉 前往下载 v1.0.0（Windows exe）](https://github.com/G95467/image-text-extractor/releases/tag/v1.0.0)**
+**[👉 前往下载 v1.0.0（Windows exe）](https://github.com/G95467/PixLens/releases/tag/v1.0.0)**
 
 > 在 Release 页面底部的「资产 / Assets」中，下载 `ImageTextExtractor-v1.0.0.exe` 即可。
 
