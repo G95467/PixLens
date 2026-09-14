@@ -12,10 +12,18 @@ import os
 import queue
 import sys
 import threading
+import datetime
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 from PIL import Image, ImageOps
+
+try:
+    import openpyxl
+    from openpyxl.styles import Font, Border, Side, Alignment
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 
 APP_TITLE = "图片文字提取工具"
 APP_SUBTITLE = "本地离线识别 · 免费 · 支持 JPG / PNG"
@@ -56,6 +64,117 @@ def recognize_image(path):
     if txts:
         return "\n".join(txts)
     return ""
+
+
+def recognize_with_boxes(path):
+    """识别图片中的文字，返回 [(text, bbox), ...]，bbox 为四个角点坐标。"""
+    engine = get_ocr_engine()
+    out = engine(path)
+    if out is None:
+        return []
+    items = []
+    if isinstance(out, tuple):
+        result = out[0] or []
+        for item in result:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                items.append((str(item[1]), item[0]))
+    else:
+        txts = getattr(out, "txts", None)
+        boxes = getattr(out, "boxes", None)
+        if txts and boxes:
+            for t, b in zip(txts, boxes):
+                items.append((str(t), b))
+    return items
+
+
+def extract_table(ocr_items):
+    """
+    根据 OCR 结果的坐标，把文字按行列分组，还原为二维表格。
+    ocr_items: [(text, bbox), ...]，bbox 为 [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+    返回: list[list[str]]
+    """
+    if not ocr_items:
+        return []
+
+    parsed = []
+    for text, bbox in ocr_items:
+        try:
+            xs = [float(p[0]) for p in bbox]
+            ys = [float(p[1]) for p in bbox]
+        except (TypeError, ValueError, IndexError):
+            continue
+        cx = sum(xs) / 4.0
+        cy = sum(ys) / 4.0
+        left = min(xs)
+        right = max(xs)
+        top = min(ys)
+        bottom = max(ys)
+        height = max(bottom - top, 1.0)
+        parsed.append((text, cx, cy, left, right, height))
+
+    if not parsed:
+        return []
+
+    # 按 y 中心排序，按行聚类
+    parsed.sort(key=lambda x: x[2])
+    rows = []
+    current_row = [parsed[0]]
+    for item in parsed[1:]:
+        prev_cy = current_row[-1][2]
+        threshold = item[5] * 0.55  # 行高的 55% 作为同行判定阈值
+        if abs(item[2] - prev_cy) <= threshold:
+            current_row.append(item)
+        else:
+            rows.append(current_row)
+            current_row = [item]
+    rows.append(current_row)
+
+    # 每行内按左边界排序，提取文字
+    table = []
+    for row in rows:
+        row.sort(key=lambda x: x[3])
+        table.append([item[0] for item in row])
+
+    return table
+
+
+def export_table_to_excel(table_data, save_path):
+    """把二维表格数据写入 xlsx 文件，带表头加粗、边框、居中、自动列宽。"""
+    if not HAS_OPENPYXL:
+        raise RuntimeError("未安装 openpyxl，无法导出 Excel")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "表格提取结果"
+
+    thin = Side(style="thin", color="999999")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for r, row in enumerate(table_data, 1):
+        for c, val in enumerate(row, 1):
+            cell = ws.cell(row=r, column=c, value=val)
+            cell.border = border
+            cell.alignment = center
+            if r == 1:
+                cell.font = Font(bold=True)
+
+    # 自动列宽
+    for col_cells in ws.columns:
+        max_len = 0
+        col_letter = col_cells[0].column_letter
+        for cell in col_cells:
+            try:
+                v = str(cell.value) if cell.value is not None else ""
+                # 中文按 2 个宽度估算
+                w = sum(2 if ord(ch) > 127 else 1 for ch in v)
+                if w > max_len:
+                    max_len = w
+            except Exception:
+                pass
+        ws.column_dimensions[col_letter].width = min(max(max_len + 4, 10), 50)
+
+    wb.save(save_path)
+    return save_path
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +221,16 @@ class OCRApp(ctk.CTk):
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
             text_color="#8A8F9C",
         ).grid(row=0, column=1, sticky="w", padx=(12, 0))
-        header.grid_columnconfigure(2, weight=0)
+        header.grid_columnconfigure(2, weight=1)
+
+        # 主题切换开关
+        self.theme_switch = ctk.CTkSwitch(
+            header, text="深色模式", width=90,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            command=self.toggle_theme,
+        )
+        self.theme_switch.grid(row=0, column=3, sticky="e", padx=(0, 20))
+        self.theme_switch.select()  # 默认深色
 
         # 主体
         body = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -161,8 +289,9 @@ class OCRApp(ctk.CTk):
         btn_row = ctk.CTkFrame(right, fg_color="transparent")
         btn_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
         btn_row.grid_columnconfigure(0, weight=3)
-        btn_row.grid_columnconfigure(1, weight=2)
+        btn_row.grid_columnconfigure(1, weight=3)
         btn_row.grid_columnconfigure(2, weight=2)
+        btn_row.grid_columnconfigure(3, weight=2)
 
         self.recognize_btn = ctk.CTkButton(
             btn_row, text="开始识别", height=42,
@@ -171,13 +300,21 @@ class OCRApp(ctk.CTk):
         )
         self.recognize_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
+        self.table_btn = ctk.CTkButton(
+            btn_row, text="表格提取", height=42,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=14, weight="bold"),
+            corner_radius=10, fg_color="#1565C0", hover_color="#1976D2",
+            command=self.start_table_extract,
+        )
+        self.table_btn.grid(row=0, column=1, sticky="ew", padx=6)
+
         self.copy_btn = ctk.CTkButton(
             btn_row, text="复制文字", height=42,
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=14, weight="bold"),
             corner_radius=10, fg_color="#2E7D32", hover_color="#388E3C",
             state="disabled", command=self.copy_text,
         )
-        self.copy_btn.grid(row=0, column=1, sticky="ew", padx=6)
+        self.copy_btn.grid(row=0, column=2, sticky="ew", padx=6)
 
         self.clear_btn = ctk.CTkButton(
             btn_row, text="清空", height=42,
@@ -185,7 +322,7 @@ class OCRApp(ctk.CTk):
             corner_radius=10, fg_color="#3A3F4B", hover_color="#4A5060",
             command=self.clear_all,
         )
-        self.clear_btn.grid(row=0, column=2, sticky="ew", padx=(6, 0))
+        self.clear_btn.grid(row=0, column=3, sticky="ew", padx=(6, 0))
 
         # ---- 底部状态栏 ----
         footer = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -204,6 +341,14 @@ class OCRApp(ctk.CTk):
         self.progress_bar.set(0)
 
     # ---------------- 交互逻辑 ----------------
+    def toggle_theme(self):
+        if self.theme_switch.get() == 1:
+            ctk.set_appearance_mode("dark")
+            self.theme_switch.configure(text="深色模式")
+        else:
+            ctk.set_appearance_mode("light")
+            self.theme_switch.configure(text="浅色模式")
+
     def select_image(self):
         if self._recognizing:
             return
@@ -244,6 +389,7 @@ class OCRApp(ctk.CTk):
         self._recognizing = True
         self.select_btn.configure(state="disabled")
         self.recognize_btn.configure(state="disabled", text="识别中…")
+        self.table_btn.configure(state="disabled")
         self.copy_btn.configure(state="disabled")
         self.result_box.delete("1.0", "end")
         self.char_count_label.configure(text="")
@@ -268,6 +414,12 @@ class OCRApp(ctk.CTk):
                     self._on_done(payload)
                 elif kind == "error":
                     self._on_error(payload)
+                elif kind == "table_done":
+                    self._on_table_done(payload)
+                elif kind == "table_empty":
+                    self._on_table_empty()
+                elif kind == "table_error":
+                    self._on_table_error(payload)
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)
@@ -276,6 +428,7 @@ class OCRApp(ctk.CTk):
         self._recognizing = False
         self.select_btn.configure(state="normal")
         self.recognize_btn.configure(state="normal", text="开始识别")
+        self.table_btn.configure(state="normal")
         self.progress_bar.stop()
         self.result_box.insert("1.0", text)
         if text.strip():
@@ -290,9 +443,83 @@ class OCRApp(ctk.CTk):
         self._recognizing = False
         self.select_btn.configure(state="normal")
         self.recognize_btn.configure(state="normal", text="开始识别")
+        self.table_btn.configure(state="normal")
         self.progress_bar.stop()
         self.set_status("识别失败")
         messagebox.showerror("识别失败", f"识别过程出现错误：\n{err}")
+
+    # ---------------- 表格提取 ----------------
+    def start_table_extract(self):
+        if self._recognizing:
+            return
+        if not self.image_path:
+            messagebox.showinfo("提示", "请先选择一张包含表格的图片。")
+            return
+        if not HAS_OPENPYXL:
+            messagebox.showerror("缺少依赖", "未安装 openpyxl，无法导出 Excel。\n请运行：pip install openpyxl")
+            return
+        self._recognizing = True
+        self.select_btn.configure(state="disabled")
+        self.recognize_btn.configure(state="disabled")
+        self.table_btn.configure(state="disabled", text="提取中…")
+        self.copy_btn.configure(state="disabled")
+        self.result_box.delete("1.0", "end")
+        self.char_count_label.configure(text="")
+        self.progress_bar.start()
+        self.set_status("正在识别表格并生成 Excel，请稍候…")
+        threading.Thread(
+            target=self._table_worker, args=(self.image_path,), daemon=True
+        ).start()
+
+    def _table_worker(self, path):
+        try:
+            items = recognize_with_boxes(path)
+            table = extract_table(items)
+            if not table:
+                self._msg_queue.put(("table_empty", None))
+                return
+            # 生成桌面路径
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"表格提取结果_{timestamp}.xlsx"
+            save_path = os.path.join(desktop, filename)
+            export_table_to_excel(table, save_path)
+            # 生成预览文本（制表符分隔）
+            preview_lines = ["\t".join(row) for row in table]
+            preview = "\n".join(preview_lines)
+            self._msg_queue.put(("table_done", (save_path, preview, len(table), max(len(r) for r in table))))
+        except Exception as exc:
+            self._msg_queue.put(("table_error", str(exc)))
+
+    def _on_table_done(self, payload):
+        save_path, preview, rows, cols = payload
+        self._recognizing = False
+        self.select_btn.configure(state="normal")
+        self.recognize_btn.configure(state="normal")
+        self.table_btn.configure(state="normal", text="表格提取")
+        self.progress_bar.stop()
+        self.result_box.insert("1.0", preview)
+        self.char_count_label.configure(text=f"{rows} 行 × {cols} 列")
+        self.copy_btn.configure(state="normal")
+        self.set_status(f"表格已保存到桌面：{os.path.basename(save_path)}")
+        messagebox.showinfo("表格提取完成", f"已识别 {rows} 行 × {cols} 列的表格，\nExcel 文件已保存到桌面：\n\n{os.path.basename(save_path)}")
+
+    def _on_table_empty(self):
+        self._recognizing = False
+        self.select_btn.configure(state="normal")
+        self.recognize_btn.configure(state="normal")
+        self.table_btn.configure(state="normal", text="表格提取")
+        self.progress_bar.stop()
+        self.set_status("未在图片中检测到表格内容")
+
+    def _on_table_error(self, err):
+        self._recognizing = False
+        self.select_btn.configure(state="normal")
+        self.recognize_btn.configure(state="normal")
+        self.table_btn.configure(state="normal", text="表格提取")
+        self.progress_bar.stop()
+        self.set_status("表格提取失败")
+        messagebox.showerror("表格提取失败", f"出现错误：\n{err}")
 
     def copy_text(self):
         text = self.result_box.get("1.0", "end").strip()
