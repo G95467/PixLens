@@ -208,18 +208,18 @@ class OCRApp(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
 
         # 顶栏
-        header = ctk.CTkFrame(self, corner_radius=0, fg_color="#121318", height=66)
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=("#EDEFF3", "#121318"), height=66)
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             header, text=APP_TITLE,
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=20, weight="bold"),
-            text_color="#FFFFFF",
+            text_color=("#1A1A1A", "#FFFFFF"),
         ).grid(row=0, column=0, sticky="w", padx=24, pady=14)
         ctk.CTkLabel(
             header, text=APP_SUBTITLE,
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-            text_color="#8A8F9C",
+            text_color=("#6B7280", "#8A8F9C"),
         ).grid(row=0, column=1, sticky="w", padx=(12, 0))
         header.grid_columnconfigure(2, weight=1)
 
@@ -240,7 +240,7 @@ class OCRApp(ctk.CTk):
         body.grid_rowconfigure(0, weight=1)
 
         # ---- 左：图片预览 ----
-        left = ctk.CTkFrame(body, corner_radius=16)
+        left = ctk.CTkFrame(body, corner_radius=16, border_width=1, border_color=("#E5E7EB", "#2A2D35"))
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 9))
         left.grid_columnconfigure(0, weight=1)
         left.grid_rowconfigure(0, weight=1)
@@ -249,7 +249,7 @@ class OCRApp(ctk.CTk):
             left,
             text="尚未选择图片\n\n点击下方按钮，从电脑中选择 JPG / PNG 图片",
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=15),
-            text_color="#7A808C",
+            text_color=("#9CA3AF", "#7A808C"),
         )
         self.preview_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
 
@@ -261,7 +261,7 @@ class OCRApp(ctk.CTk):
         self.select_btn.grid(row=1, column=0, sticky="ew", padx=16, pady=14)
 
         # ---- 右：识别结果 ----
-        right = ctk.CTkFrame(body, corner_radius=16)
+        right = ctk.CTkFrame(body, corner_radius=16, border_width=1, border_color=("#E5E7EB", "#2A2D35"))
         right.grid(row=0, column=1, sticky="nsew", padx=(9, 0))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(1, weight=1)
@@ -275,14 +275,14 @@ class OCRApp(ctk.CTk):
         self.char_count_label = ctk.CTkLabel(
             result_header, text="",
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-            text_color="#7A808C",
+            text_color=("#9CA3AF", "#7A808C"),
         )
         self.char_count_label.pack(side="left", padx=(10, 0))
 
         self.result_box = ctk.CTkTextbox(
             right, wrap="word",
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=15),
-            corner_radius=10,
+            corner_radius=10, border_width=1, border_color=("#E5E7EB", "#2A2D35"),
         )
         self.result_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(4, 8))
 
@@ -319,7 +319,8 @@ class OCRApp(ctk.CTk):
         self.clear_btn = ctk.CTkButton(
             btn_row, text="清空", height=42,
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=14),
-            corner_radius=10, fg_color="#3A3F4B", hover_color="#4A5060",
+            corner_radius=10, fg_color=("#D1D5DB", "#3A3F4B"), hover_color=("#9CA3AF", "#4A5060"),
+            text_color=("#1F2937", "#FFFFFF"),
             command=self.clear_all,
         )
         self.clear_btn.grid(row=0, column=3, sticky="ew", padx=(6, 0))
@@ -331,7 +332,7 @@ class OCRApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(
             footer, text="就绪：请选择一张图片开始",
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-            text_color="#8A8F9C",
+            text_color=("#6B7280", "#8A8F9C"),
         )
         self.status_label.grid(row=0, column=0, sticky="w")
         self.progress_bar = ctk.CTkProgressBar(

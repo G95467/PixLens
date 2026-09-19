@@ -1,5 +1,6 @@
 # 构建产物（exe 通过 GitHub Releases 发布，不纳入代码仓库）
 图片文字提取工具.exe
+_internal/
 dist/
 build/
 *.spec
